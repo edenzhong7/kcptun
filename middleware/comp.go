@@ -14,6 +14,10 @@ func NewCompMW() ConnMiddleware {
 
 type compMW struct{}
 
+func (c compMW) Name() string {
+	return "comp"
+}
+
 func (c compMW) WrapClient(conn net.Conn) (net.Conn, error) {
 	cs := new(compStream)
 	cs.conn = conn

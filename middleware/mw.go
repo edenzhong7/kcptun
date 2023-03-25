@@ -13,6 +13,7 @@ type Conn interface {
 }
 
 type ConnMiddleware interface {
+	Name() string
 	WrapClient(conn net.Conn) (net.Conn, error)
 	WrapServer(conn net.Conn) (net.Conn, error)
 }
@@ -30,8 +31,9 @@ func (wl *wrappedListener) Accept() (net.Conn, error) {
 	log.Printf("new server conn from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 	for _, mw := range wl.mws {
 		conn, err = mw.WrapServer(conn)
+		log.Printf("apply mw %s", mw.Name())
 		if err != nil {
-			log.Printf("wrap server conn failed, err: %v", err)
+			log.Printf("[%s] wrap server conn failed, err: %v", mw.Name(), err)
 			return nil, err
 		}
 	}
@@ -41,13 +43,18 @@ func (wl *wrappedListener) Accept() (net.Conn, error) {
 }
 
 func WrapClientConn(conn net.Conn, mws ...ConnMiddleware) (net.Conn, error) {
+	log.Printf("new client conn from %s to %s", conn.LocalAddr().String(), conn.RemoteAddr().String())
+
 	var err error
 	for _, mw := range mws {
+		log.Printf("apply mw %s", mw.Name())
 		conn, err = mw.WrapClient(conn)
 		if err != nil {
+			log.Printf("[%s] wrap client conn failed, err: %v", mw.Name(), err)
 			return nil, err
 		}
 	}
+	log.Printf("wrapped client conn from %s to %s", conn.LocalAddr().String(), conn.RemoteAddr().String())
 	return conn, nil
 }
 

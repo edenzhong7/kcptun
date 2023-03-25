@@ -38,6 +38,10 @@ func NewRandMW() ConnMiddleware {
 
 type randMW struct{}
 
+func (r randMW) Name() string {
+	return "rand"
+}
+
 func (r randMW) WrapClient(conn net.Conn) (net.Conn, error) {
 	passwordLength := rand.Intn(128) + 128
 	password := RandPassword(passwordLength)

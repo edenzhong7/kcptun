@@ -23,6 +23,10 @@ type tlsWrapper struct {
 	svrConfig *tls.Config
 }
 
+func (t tlsWrapper) Name() string {
+	return "tls"
+}
+
 func (t tlsWrapper) WrapClient(conn net.Conn) (net.Conn, error) {
 	ctx := context.Background()
 	tlsConn := tls.Client(conn, t.cliConfig)
