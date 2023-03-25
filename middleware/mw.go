@@ -57,6 +57,7 @@ func (l *lazyConn) init() {
 			return
 		}
 	}
+	l.Conn = conn
 	log.Printf("wrapped server conn  from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 	close(l.ready)
 }
@@ -76,7 +77,6 @@ func (l *lazyConn) Read(p []byte) (int, error) {
 	case <-time.NewTimer(time.Second * 5).C:
 		return 0, errors.New("conn mw setup timeout")
 	}
-
 	return l.Conn.Read(p)
 }
 
@@ -89,7 +89,6 @@ func (l *lazyConn) Write(p []byte) (int, error) {
 	case <-time.NewTimer(time.Second * 5).C:
 		return 0, errors.New("conn mw setup timeout")
 	}
-
 	return l.Conn.Write(p)
 }
 
@@ -100,6 +99,19 @@ func (wl *wrappedListener) Accept() (net.Conn, error) {
 	}
 
 	return newLazyServerConn(conn, wl.mws), nil
+
+	// log.Printf("new server conn from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
+	// for _, mw := range wl.mws {
+	// 	conn, err = mw.WrapServer(conn)
+	// 	log.Printf("apply mw %s", mw.Name())
+	// 	if err != nil {
+	// 		log.Printf("[%s] wrap server conn failed, err: %v", mw.Name(), err)
+	// 		return nil, err
+	// 	}
+	// }
+
+	// log.Printf("wrapped server conn  from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
+	// return conn, nil
 }
 
 func WrapClientConn(conn net.Conn, mws ...ConnMiddleware) (net.Conn, error) {
