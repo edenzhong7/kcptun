@@ -49,7 +49,7 @@ func (r randMW) WrapClient(conn net.Conn) (net.Conn, error) {
 		return nil, errors.New("write password failed")
 	}
 	return &shuffleStream{
-		conn:        conn,
+		Conn:        conn,
 		readOffset:  0,
 		writeOffset: 0,
 		pl:          len(password),
@@ -86,7 +86,7 @@ func (r randMW) WrapServer(conn net.Conn) (net.Conn, error) {
 	}
 
 	return &shuffleStream{
-		conn:        conn,
+		Conn:        conn,
 		readOffset:  0,
 		writeOffset: 0,
 		pl:          len(password),
@@ -95,7 +95,7 @@ func (r randMW) WrapServer(conn net.Conn) (net.Conn, error) {
 }
 
 type shuffleStream struct {
-	conn        net.Conn
+	net.Conn
 	readOffset  int
 	writeOffset int
 	pl          int
@@ -103,7 +103,7 @@ type shuffleStream struct {
 }
 
 func (c *shuffleStream) Read(p []byte) (n int, err error) {
-	n, err = c.conn.Read(p)
+	n, err = c.Conn.Read(p)
 	if err != nil {
 		log.Printf("rand read err: %v", err)
 	}
@@ -123,31 +123,7 @@ func (c *shuffleStream) Write(p []byte) (n int, err error) {
 	for i := 0; i < len(p); i++ {
 		pCopy[i] = pCopy[i] ^ c.pass[(c.writeOffset+i)%c.pl]
 	}
-	n, err = c.conn.Write(pCopy)
+	n, err = c.Conn.Write(pCopy)
 	c.writeOffset += n
 	return n, err
-}
-
-func (c *shuffleStream) Close() error {
-	return c.conn.Close()
-}
-
-func (c *shuffleStream) LocalAddr() net.Addr {
-	return c.conn.LocalAddr()
-}
-
-func (c *shuffleStream) RemoteAddr() net.Addr {
-	return c.conn.RemoteAddr()
-}
-
-func (c *shuffleStream) SetDeadline(t time.Time) error {
-	return c.conn.SetDeadline(t)
-}
-
-func (c *shuffleStream) SetReadDeadline(t time.Time) error {
-	return c.conn.SetReadDeadline(t)
-}
-
-func (c *shuffleStream) SetWriteDeadline(t time.Time) error {
-	return c.conn.SetWriteDeadline(t)
 }

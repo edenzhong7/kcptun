@@ -3,7 +3,14 @@ package middleware
 import (
 	"log"
 	"net"
+
+	"github.com/cybozu-go/netutil"
 )
+
+type Conn interface {
+	net.Conn
+	netutil.HalfCloser
+}
 
 type ConnMiddleware interface {
 	WrapClient(conn net.Conn) (net.Conn, error)

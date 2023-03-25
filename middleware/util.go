@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"io"
+	"log"
 	"net"
 	"sync"
 
@@ -58,9 +59,11 @@ func Pipe(srcConn *net.TCPConn, destConn net.Conn) {
 		_, err := io.CopyBuffer(destConn, srcConn, buf)
 		pool.Put(buf)
 		if hc, ok := destConn.(netutil.HalfCloser); ok {
-			hc.CloseWrite()
+			hc.CloseRead()
+			log.Printf("half close dest read: %s", srcConn.RemoteAddr().String())
 		}
-		srcConn.CloseRead()
+		srcConn.CloseWrite()
+		log.Printf("half close src write: %s", srcConn.LocalAddr().String())
 		return err
 	}()
 
@@ -73,9 +76,11 @@ func Pipe(srcConn *net.TCPConn, destConn net.Conn) {
 		buf := pool.Get().([]byte)
 		_, err := io.CopyBuffer(srcConn, destConn, buf)
 		pool.Put(buf)
-		srcConn.CloseWrite()
+		srcConn.CloseRead()
+		log.Printf("half close src read: %s", srcConn.LocalAddr().String())
 		if hc, ok := destConn.(netutil.HalfCloser); ok {
-			hc.CloseRead()
+			hc.CloseWrite()
+			log.Printf("half close dest write: %s", srcConn.RemoteAddr().String())
 		}
 		return err
 	}()
