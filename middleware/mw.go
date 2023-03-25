@@ -31,7 +31,7 @@ func (wl *wrappedListener) Accept() (net.Conn, error) {
 	for _, mw := range wl.mws {
 		conn, err = mw.WrapServer(conn)
 		if err != nil {
-			log.Printf("wrap server conn failed, from %s to %s, err: %v", conn.RemoteAddr().String(), conn.LocalAddr().String(), err)
+			log.Printf("wrap server conn failed, err: %v", err)
 			return nil, err
 		}
 	}
