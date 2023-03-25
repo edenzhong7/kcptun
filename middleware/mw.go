@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"errors"
 	"log"
 	"net"
+	"time"
 
 	"github.com/cybozu-go/netutil"
 )
@@ -23,23 +25,81 @@ type wrappedListener struct {
 	mws []ConnMiddleware
 }
 
+func newLazyServerConn(conn net.Conn, mws []ConnMiddleware) net.Conn {
+	c := &lazyConn{
+		Conn:   conn,
+		mws:    mws,
+		ready:  make(chan struct{}),
+		closed: make(chan struct{}),
+	}
+	go c.init()
+	return c
+}
+
+type lazyConn struct {
+	net.Conn
+	mws    []ConnMiddleware
+	ready  chan struct{}
+	closed chan struct{}
+}
+
+func (l *lazyConn) init() {
+	conn := l.Conn
+	mws := l.mws
+
+	log.Printf("new server conn from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
+	var err error
+	for _, mw := range mws {
+		conn, err = mw.WrapServer(conn)
+		log.Printf("apply mw %s", mw.Name())
+		if err != nil {
+			log.Printf("[%s] wrap server conn failed, err: %v", mw.Name(), err)
+			return
+		}
+	}
+	log.Printf("wrapped server conn  from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
+	close(l.ready)
+}
+
+func (l *lazyConn) Close() error {
+	err := l.Conn.Close()
+	close(l.closed)
+	return err
+}
+
+func (l *lazyConn) Read(p []byte) (int, error) {
+	select {
+	case <-l.ready:
+		// pass
+	case <-l.closed:
+		return 0, errors.New("conn closed")
+	case <-time.NewTimer(time.Second * 5).C:
+		return 0, errors.New("conn mw setup timeout")
+	}
+
+	return l.Conn.Read(p)
+}
+
+func (l *lazyConn) Write(p []byte) (int, error) {
+	select {
+	case <-l.ready:
+		// pass
+	case <-l.closed:
+		return 0, errors.New("conn closed")
+	case <-time.NewTimer(time.Second * 5).C:
+		return 0, errors.New("conn mw setup timeout")
+	}
+
+	return l.Conn.Write(p)
+}
+
 func (wl *wrappedListener) Accept() (net.Conn, error) {
 	conn, err := wl.Listener.Accept()
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("new server conn from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
-	for _, mw := range wl.mws {
-		conn, err = mw.WrapServer(conn)
-		log.Printf("apply mw %s", mw.Name())
-		if err != nil {
-			log.Printf("[%s] wrap server conn failed, err: %v", mw.Name(), err)
-			return nil, err
-		}
-	}
-	log.Printf("wrapped server conn  from %s to %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 
-	return conn, nil
+	return newLazyServerConn(conn, wl.mws), nil
 }
 
 func WrapClientConn(conn net.Conn, mws ...ConnMiddleware) (net.Conn, error) {
