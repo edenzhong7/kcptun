@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"math/rand"
 	"net"
 	"time"
@@ -30,25 +32,20 @@ func RandPassword(passwordLength int) password {
 	return password
 }
 
-var _ ConnMiddleware = randMW{}
+func NewRandMW() ConnMiddleware {
+	return randMW{}
+}
 
 type randMW struct{}
 
 func (r randMW) WrapClient(conn net.Conn) (net.Conn, error) {
 	passwordLength := rand.Intn(128) + 128
 	password := RandPassword(passwordLength)
-	n, err := blockWrite(conn, []byte{byte(len(password))})
+	n, err := blockWrite(conn, append([]byte{byte(len(password))}, []byte(password)...))
 	if err != nil {
 		return nil, err
 	}
-	if n != 1 {
-		return nil, errors.New("write password length failed")
-	}
-	n, err = blockWrite(conn, []byte(password))
-	if err != nil {
-		return nil, err
-	}
-	if n != len(password) {
+	if n != len(password)+1 {
 		return nil, errors.New("write password failed")
 	}
 	return &shuffleStream{
@@ -61,22 +58,31 @@ func (r randMW) WrapClient(conn net.Conn) (net.Conn, error) {
 }
 
 func (r randMW) WrapServer(conn net.Conn) (net.Conn, error) {
-	bl := make([]byte, 1)
+	bl := make([]byte, 129)
 	n, err := blockRead(conn, bl)
 	if err != nil {
 		return nil, err
 	}
-	if n != 1 {
-		return nil, errors.New("read password length failed")
+	if n == 0 {
+		return nil, errors.New("read password failed")
 	}
 	passwordLength := int(bl[0])
-	password := make(password, passwordLength)
-	n, err = blockRead(conn, password)
-	if err != nil {
-		return nil, err
+	left := passwordLength - (n - 1)
+	password := bl[1:]
+	if left > 0 {
+		buf := make([]byte, left)
+		n, err = blockRead(conn, buf)
+		if err != nil {
+			return nil, err
+		}
+		if n != left {
+			return nil, errors.New("read password failed")
+		}
+		password = append(password, buf...)
 	}
-	if n != passwordLength {
-		return nil, errors.New("read password failed")
+
+	if len(password) != passwordLength {
+		return nil, fmt.Errorf("password len doesn't match, want %d, got: %d", passwordLength, len(password))
 	}
 
 	return &shuffleStream{
@@ -99,7 +105,7 @@ type shuffleStream struct {
 func (c *shuffleStream) Read(p []byte) (n int, err error) {
 	n, err = c.conn.Read(p)
 	if err != nil {
-		println("gg")
+		log.Printf("rand read err: %v", err)
 	}
 	if err != nil {
 		return n, err

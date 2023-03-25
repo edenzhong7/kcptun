@@ -5,10 +5,18 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"io/ioutil"
+	"log"
 	"net"
 )
 
 var _ ConnMiddleware = tlsWrapper{}
+
+func NewTlsMW(cliCfg, svrCfg *tls.Config) ConnMiddleware {
+	return &tlsWrapper{
+		cliConfig: cliCfg,
+		svrConfig: svrCfg,
+	}
+}
 
 type tlsWrapper struct {
 	cliConfig *tls.Config
@@ -42,7 +50,7 @@ type tlsStream struct {
 func (t *tlsStream) Read(p []byte) (n int, err error) {
 	n, err = t.Conn.Read(p)
 	if err != nil {
-		println("gg")
+		log.Printf("tls read err: %v", err)
 	}
 	return n, err
 }
@@ -51,7 +59,8 @@ func (t *tlsStream) Write(p []byte) (n int, err error) {
 	n, err = t.Conn.Write(p)
 	return n, err
 }
-func loadSvrCert(ca, crt, crtKey string) (*tls.Config, error) {
+
+func LoadSvrCert(ca, crt, crtKey string) (*tls.Config, error) {
 	// 加载服务端证书
 	srvCert, err := tls.LoadX509KeyPair(crt, crtKey)
 	if err != nil {
@@ -78,7 +87,7 @@ func loadSvrCert(ca, crt, crtKey string) (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-func loadCliCert(ca, crt, crtKey string) (*tls.Config, error) {
+func LoadCliCert(ca, crt, crtKey string) (*tls.Config, error) {
 	// 加载客户端证书
 	cliCert, err := tls.LoadX509KeyPair(crt, crtKey)
 	if err != nil {
