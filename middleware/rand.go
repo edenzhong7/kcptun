@@ -24,10 +24,10 @@ func RandPassword(passwordLength int) password {
 	password := make(password, passwordLength)
 	for i, v := range intArr {
 		password[i] = byte(v)
-		if i == v {
-			// 确保不会出现如何一个byte位出现重复
-			return RandPassword(passwordLength)
-		}
+		// if i == v {
+		// 	// 确保不会出现如何一个byte位出现重复
+		// 	return RandPassword(passwordLength)
+		// }
 	}
 	return password
 }

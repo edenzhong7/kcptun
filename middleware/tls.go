@@ -30,7 +30,7 @@ func (t tlsWrapper) WrapClient(conn net.Conn) (net.Conn, error) {
 		conn.Close()
 		return nil, err
 	}
-	return &tlsStream{tlsConn}, nil
+	return &tlsStream{&tlsConnFork{tlsConn}}, nil
 }
 
 func (t tlsWrapper) WrapServer(conn net.Conn) (net.Conn, error) {
@@ -40,7 +40,15 @@ func (t tlsWrapper) WrapServer(conn net.Conn) (net.Conn, error) {
 		conn.Close()
 		return nil, err
 	}
-	return &tlsStream{tlsConn}, nil
+	return &tlsStream{&tlsConnFork{tlsConn}}, nil
+}
+
+type tlsConnFork struct {
+	*tls.Conn
+}
+
+func (t *tlsConnFork) CloseRead() error {
+	return nil
 }
 
 type tlsStream struct {
@@ -77,11 +85,11 @@ func LoadSvrCert(ca, crt, crtKey string) (*tls.Config, error) {
 
 	// https tls config
 	tlsConfig := &tls.Config{
-		ServerName:         "localhost",
+		//ServerName:         "localhost",
 		Certificates:       []tls.Certificate{srvCert},
 		ClientCAs:          caCertPool,                     // 专用于校验客户端证书的 CA 池
 		ClientAuth:         tls.RequireAndVerifyClientCert, // 校验客户端证书
-		InsecureSkipVerify: false,                          // 不接受不安全的连接
+		InsecureSkipVerify: true,
 	}
 	tlsConfig.BuildNameToCertificate()
 	return tlsConfig, nil
@@ -104,10 +112,10 @@ func LoadCliCert(ca, crt, crtKey string) (*tls.Config, error) {
 
 	// https tls config
 	tlsConfig := &tls.Config{
-		ServerName:         "localhost",
+		//ServerName:         "localhost",
 		Certificates:       []tls.Certificate{cliCert},
 		RootCAs:            caCertPool, // 校验服务端证书的 CA 池
-		InsecureSkipVerify: false,
+		InsecureSkipVerify: true,
 	}
 	tlsConfig.BuildNameToCertificate()
 	return tlsConfig, nil

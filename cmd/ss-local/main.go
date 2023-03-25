@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"io"
 	"log"
 	"math/rand"
@@ -41,10 +42,10 @@ func copyConn(src, dst net.Conn) {
 	log.Printf("finish copy: %s -> %s, copied: %d, err: %v", src.RemoteAddr().String(), dst.RemoteAddr(), n, err)
 }
 
-func forward(srcConn *net.TCPConn) {
-	// defer srcConn.Close()
+func forward(srcConn *net.TCPConn, raddr string) {
+	defer srcConn.Close()
 
-	dstConn, err := net.Dial("tcp", "127.0.0.1:9999")
+	dstConn, err := net.Dial("tcp", raddr)
 	if err != nil {
 		log.Printf("dial ss-server err: %v", err)
 		return
@@ -54,15 +55,19 @@ func forward(srcConn *net.TCPConn) {
 		log.Printf("wrap cli conn failed, err: %v ", err)
 		return
 	}
-	//defer dstConn.Close()
+	defer dstConn.Close()
 
-	// go copyConn(dstConn, srcConn)
-	// copyConn(srcConn, dstConn)
-	middleware.Pipe(srcConn, dstConn)
+	go copyConn(dstConn, srcConn)
+	copyConn(srcConn, dstConn)
+	//middleware.Pipe(srcConn, dstConn)
 }
 
 func main() {
-	addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:10999")
+	laddr := flag.String("addr", "0.0.0.0:10999", "listen addr")
+	raddr := flag.String("raddr", "127.0.0.1:9999", "server addr")
+	flag.Parse()
+
+	addr, err := net.ResolveTCPAddr("tcp", *laddr)
 	if err != nil {
 		panic(err)
 	}
@@ -76,6 +81,6 @@ func main() {
 			log.Fatal(err)
 		}
 
-		go forward(conn)
+		go forward(conn, *raddr)
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"math/rand"
@@ -38,7 +39,10 @@ func init() {
 }
 
 func main() {
-	listen, err := net.Listen("tcp", "0.0.0.0:9999")
+	laddr := flag.String("addr", "0.0.0.0:9999", "listen addr")
+	flag.Parse()
+
+	listen, err := net.Listen("tcp", *laddr)
 	if err != nil {
 		fmt.Println("Listen() failed, err: ", err)
 		return
