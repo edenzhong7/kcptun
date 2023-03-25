@@ -99,6 +99,9 @@ type shuffleStream struct {
 func (c *shuffleStream) Read(p []byte) (n int, err error) {
 	n, err = c.conn.Read(p)
 	if err != nil {
+		println("gg")
+	}
+	if err != nil {
 		return n, err
 	}
 	for i := 0; i < n; i++ {

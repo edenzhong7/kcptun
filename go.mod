@@ -1,6 +1,7 @@
 module github.com/xtaci/kcptun
 
 require (
+	github.com/elazarl/goproxy v0.0.0-20221015165544-a0805db90819
 	github.com/golang/snappy v0.0.4
 	github.com/pkg/errors v0.9.1
 	github.com/urfave/cli v1.22.12

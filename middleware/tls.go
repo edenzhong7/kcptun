@@ -22,7 +22,7 @@ func (t tlsWrapper) WrapClient(conn net.Conn) (net.Conn, error) {
 		conn.Close()
 		return nil, err
 	}
-	return tlsConn, nil
+	return &tlsStream{tlsConn}, nil
 }
 
 func (t tlsWrapper) WrapServer(conn net.Conn) (net.Conn, error) {
@@ -32,9 +32,25 @@ func (t tlsWrapper) WrapServer(conn net.Conn) (net.Conn, error) {
 		conn.Close()
 		return nil, err
 	}
-	return tlsConn, nil
+	return &tlsStream{tlsConn}, nil
 }
 
+type tlsStream struct {
+	net.Conn
+}
+
+func (t *tlsStream) Read(p []byte) (n int, err error) {
+	n, err = t.Conn.Read(p)
+	if err != nil {
+		println("gg")
+	}
+	return n, err
+}
+
+func (t *tlsStream) Write(p []byte) (n int, err error) {
+	n, err = t.Conn.Write(p)
+	return n, err
+}
 func loadSvrCert(ca, crt, crtKey string) (*tls.Config, error) {
 	// 加载服务端证书
 	srvCert, err := tls.LoadX509KeyPair(crt, crtKey)
