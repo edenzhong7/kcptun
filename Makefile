@@ -6,6 +6,8 @@ server:
 local:
 	@go build -o middleware/ss-local github.com/xtaci/kcptun/cmd/ss-local
 
+all: server local
+
 clean:
 	@go clean
 	rm --force "xx.out"
