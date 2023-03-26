@@ -33,8 +33,8 @@ func init() {
 	//}
 
 	mws = append(mws,
-		redisMW{},
-		randMW{},
+		redisMWV2{},
+		//randMW{},
 		//compMW{},
 		//tlsWrapper{
 		//	cliConfig: cliConfig,
