@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tidwall/redcon"
 )
@@ -129,13 +130,14 @@ func (rc *redisSvrConn) loop() {
 				return
 			}
 			rc.rmu.Unlock()
-			log.Printf("ack SET")
+			log.Printf("ack SET %d", len(sDec))
 		case "get":
-			if len(cmd.Args) != 3 {
-				log.Printf("invalid set command")
+			if len(cmd.Args) != 2 {
+				log.Printf("invalid get command")
 				return
 			}
 			rc.wmu.Lock()
+			bufLen := len(rc.writeBuf)
 			sEnc := base64.StdEncoding.EncodeToString(rc.writeBuf)
 			rc.w.WriteString(sEnc)
 			rc.writeBuf = rc.writeBuf[:0]
@@ -146,23 +148,37 @@ func (rc *redisSvrConn) loop() {
 				return
 			}
 			rc.wmu.Unlock()
-			log.Printf("ack GET")
+			log.Printf("ack GET %d", bufLen)
 		}
 	}
 }
 
 func (rc *redisSvrConn) Read(p []byte) (n int, err error) {
-	for rc.closed {
+	defer func() {
+		if n == 0 {
+			println("gg")
+		}
+	}()
+
+	for !rc.closed {
 		rc.rmu.Lock()
-		if len(rc.readBuf) >= len(p)-n {
-			copy(p[n:], rc.readBuf)
-			rc.readBuf = rc.readBuf[len(p)-n:]
+		if len(rc.readBuf) == 0 {
 			rc.rmu.Unlock()
-			return len(p), nil
+			time.Sleep(time.Millisecond * 5)
+			continue
 		}
 
-		copy(p, rc.readBuf)
-		n += len(rc.readBuf)
+		if len(rc.readBuf) >= len(p)-n {
+			copied := copy(p[n:], rc.readBuf)
+			rc.readBuf = rc.readBuf[copied:]
+			n += copied
+			rc.rmu.Unlock()
+			return n, nil
+		}
+
+		copied := copy(p[n:], rc.readBuf)
+		n += copied
+		rc.readBuf = rc.readBuf[copied:]
 		rc.rmu.Unlock()
 
 		if n == len(p) {
@@ -197,10 +213,16 @@ type redisCliConn struct {
 }
 
 func (rc *redisCliConn) Read(p []byte) (n int, err error) {
+	defer func() {
+		if n == 0 {
+			println("gg")
+		}
+	}()
 	if len(rc.readBuf) > len(p) {
 		copy(p, rc.readBuf)
 		rc.readBuf = rc.readBuf[len(p):]
-		return len(p), nil
+		n = len(p)
+		return n, err
 	}
 
 	key := RandString(5)
@@ -230,139 +252,6 @@ func (rc *redisCliConn) Close() error {
 	_ = rc.rConn.Quit()
 	return rc.Conn.Close()
 }
-
-// type RedisClient struct {
-// 	conn net.Conn
-// }
-
-// func (c *RedisClient) Ping() error {
-// 	cmd := "*1\r\n$4\r\nPING\r\n"
-// 	n, err := c.conn.Write([]byte(cmd))
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if n != len(cmd) {
-// 		return fmt.Errorf("wrote ping cmd failed, need: %d, wrote: %d", len(cmd), n)
-// 	}
-
-// 	response := make([]byte, 5)
-// 	n, err = c.conn.Read(response)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if len(response) == 0 {
-// 		return errors.New("ping resp is empty")
-// 	}
-// 	if response[0] == '-' || string(response[1:n]) != "PONG" {
-// 		return fmt.Errorf("PING resp error, want PONG, got %s", string(response[:n]))
-// 	}
-// 	return nil
-// }
-
-// func (c *RedisClient) Set(key, value string) error {
-// 	cmd := fmt.Sprintf("*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(value), value)
-// 	n, err := c.conn.Write([]byte(cmd))
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if n != len(cmd) {
-// 		return fmt.Errorf("wrote set cmd failed, need: %d, wrote: %d", len(cmd), n)
-// 	}
-
-// 	response := make([]byte, 3)
-// 	n, err = c.conn.Read(response)
-// 	if err != nil {
-// 		if err == io.EOF {
-// 			return nil
-// 		}
-// 		return err
-// 	}
-// 	if n == 0 {
-// 		return errors.New("get resp is empty")
-// 	}
-// 	if response[0] == '-' || string(response[1:n]) != "OK" {
-// 		return fmt.Errorf("SET resp error, want OK, got %s", string(response[1:n]))
-// 	}
-
-// 	return nil
-// }
-
-// func (c *RedisClient) Get(key string) (string, error) {
-// 	cmd := fmt.Sprintf("*2\r\n$3\r\nGET\r\n$%d\r\n%s\r\n", len(key), key)
-// 	n, err := c.conn.Write([]byte(cmd))
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	if n != len(cmd) {
-// 		return "", fmt.Errorf("wrote get cmd failed, need: %d, wrote: %d", len(cmd), n)
-// 	}
-
-// 	response := make([]byte, 1024)
-// 	n, err = c.conn.Read(response)
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	if n == 0 {
-// 		return "", errors.New("get resp is empty")
-// 	}
-// 	if response[0] == '-' || string(response[1:n]) != "PONG" {
-// 		return "", fmt.Errorf("PING resp error, want PONG, got %s", string(response[1:n]))
-// 	}
-// 	return string(response[1:n]), nil
-// }
-
-// func (c *RedisClient) Quit() error {
-// 	cmd := "*1\r\n$4\r\nQUIT\r\n"
-// 	n, err := c.conn.Write([]byte(cmd))
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if n != len(cmd) {
-// 		return fmt.Errorf("wrote quit cmd failed, need: %d, wrote: %d", len(cmd), n)
-// 	}
-
-// 	response := make([]byte, 3)
-// 	n, err = c.conn.Read(response)
-// 	if err != nil {
-// 		if err == io.EOF {
-// 			return nil
-// 		}
-// 		return err
-// 	}
-// 	if n == 0 {
-// 		return errors.New("get resp is empty")
-// 	}
-// 	if response[0] == '-' || string(response[1:n]) != "OK" {
-// 		return fmt.Errorf("QUIT resp error, want OK, got %s", string(response[1:n]))
-// 	}
-// 	return nil
-// }
-
-// func readResp(conn net.Conn) ([]byte, error) {
-// 	buf := bytes.NewBuffer(nil)
-// 	var (
-// 		block []byte
-// 		n     int
-// 		err   error
-// 	)
-// 	for {
-// 		block = make([]byte, 1024)
-// 		n, err = conn.Read(block)
-// 		if err != nil {
-// 			break
-// 		}
-// 		if n == 0 {
-// 			break
-// 		}
-// 		buf.Write(block[:n])
-// 	}
-// 	response := buf.Bytes()
-
-// 	if response[0] == '-' {
-// 		return nil, errors.New(string(response[1:n]))
-// 	}
-// 	return response[1:n], nil
-// }
 
 type RedisClientV2 struct {
 	conn net.Conn
@@ -406,7 +295,7 @@ func (c *RedisClientV2) Set(key string, value string) error {
 		return err
 	}
 	if resp != "OK" {
-		return fmt.Errorf("PING resp is %s, not `OK`", resp)
+		return fmt.Errorf("SET resp is %s, not `OK`", resp)
 	}
 	return nil
 }

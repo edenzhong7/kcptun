@@ -152,7 +152,7 @@ func TestHttp(t *testing.T) {
 	go startHttpProxy()
 	go startHttp()
 	time.Sleep(time.Second)
-
+	//(&net.TCPConn{}).Close()
 	proxyUrl, err := url.Parse("http://127.0.0.1:9999")
 	if err != nil {
 		panic(err)
