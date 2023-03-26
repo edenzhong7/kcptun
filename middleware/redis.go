@@ -48,14 +48,14 @@ func (rmw redisMW) WrapClient(conn net.Conn) (net.Conn, error) {
 func (rmw redisMW) WrapServer(conn net.Conn) (net.Conn, error) {
 	c := &redisSvrConn{
 		Conn: conn,
-		r:    redcon.NewReader(conn),
-		w:    redcon.NewWriter(conn),
+		r:    redcon.NewReader(&noDeadlineConn{conn}),
+		w:    redcon.NewWriter(&noDeadlineConn{conn}),
 
 		rmu:     sync.Mutex{},
 		readBuf: make([]byte, 0, 10240),
-		wmu:     sync.Mutex{},
-		dw:      make(chan []byte, 1),
-		closed:  false,
+		//wmu:     sync.Mutex{},
+		dw:     make(chan []byte, 1),
+		closed: false,
 	}
 	go c.loop()
 	return c, nil
@@ -69,8 +69,7 @@ type redisSvrConn struct {
 	rmu     sync.Mutex
 	readBuf []byte
 
-	wmu sync.Mutex
-	dw  chan []byte
+	dw chan []byte
 
 	closed bool
 }
@@ -83,46 +82,14 @@ func (rc *redisSvrConn) loop() {
 		done = make(chan struct{})
 	)
 
+	//(&net.TCPConn{}).Read()
 	defer func() {
 		log.Printf("svc conn loop canceled, err: %v", err)
 		close(done)
 	}()
 	writer := rc.w
 
-	getEv := make(chan struct{}, 10)
 	setEv := make(chan string, 10)
-
-	go func() {
-		// get loop
-		for {
-			select {
-			case <-getEv:
-				select {
-				case <-done:
-					log.Printf("exit get loop")
-					return
-				case block, ok := <-rc.dw:
-					if !ok {
-						writer.WriteError("dw chan closed")
-						writer.Flush()
-						return
-					}
-					bufLen := len(block)
-					sEnc := base64.StdEncoding.EncodeToString(block)
-					writer.WriteBulkString(sEnc)
-					err = writer.Flush()
-					if err != nil {
-						log.Printf("write get resp failed, err: %v", err)
-						continue
-					}
-					log.Printf("ack GET %d", bufLen)
-				}
-			case <-done:
-				log.Printf("exit get loop")
-				return
-			}
-		}
-	}()
 	go func() {
 		// set loop
 		for {
@@ -198,7 +165,8 @@ func (rc *redisSvrConn) loop() {
 				writer.Flush()
 				continue
 			}
-			getEv <- struct{}{}
+			log.Printf("recv a get req")
+			//getEv <- struct{}{}
 			//if len(rc.writeBuf) == 0 {
 			//	log.Printf("write is empty, send empty resp")
 			//	writer.WriteBulkString("")
@@ -246,10 +214,19 @@ func (rc *redisSvrConn) Read(p []byte) (n int, err error) {
 }
 
 func (rc *redisSvrConn) Write(p []byte) (n int, err error) {
-	rc.dw <- p
+	//rc.dw <- p
 	//rc.wmu.Lock()
 	//defer rc.wmu.Unlock()
 	//rc.writeBuf = append(rc.writeBuf, append(p[:0:0], p...))
+	bufLen := len(p)
+	sEnc := base64.StdEncoding.EncodeToString(p)
+	rc.w.WriteBulkString(sEnc)
+	err = rc.w.Flush()
+	if err != nil {
+		log.Printf("write get resp failed, err: %v", err)
+		return 0, err
+	}
+	log.Printf("ack GET %d", bufLen)
 	return len(p), nil
 }
 
@@ -301,11 +278,44 @@ func (rc *redisCliConn) Close() error {
 	return rc.Conn.Close()
 }
 
+// func (rc *redisCliConn) SetDeadline(t time.Time) error {
+// 	log.Println("r skip dead line")
+// 	return nil
+// }
+
+// func (rc *redisCliConn) SetReadDeadline(t time.Time) error {
+// 	log.Println("r skip dead line")
+// 	return nil
+// }
+
+// func (rc *redisCliConn) SetWriteDeadline(t time.Time) error {
+// 	log.Println("r skip dead line")
+// 	return nil
+// }
+
+type noDeadlineConn struct {
+	net.Conn
+}
+
+// func (dc *noDeadlineConn) SetDeadline(t time.Time) error {
+// 	log.Println("skip dead line")
+// 	return nil
+// }
+
+// func (dc *noDeadlineConn) SetReadDeadline(t time.Time) error {
+// 	log.Println("skip dead line")
+// 	return nil
+// }
+
+// func (dc *noDeadlineConn) SetWriteDeadline(t time.Time) error {
+// 	log.Println("skip dead line")
+// 	return nil
+// }
+
 type RedisClientV2 struct {
 	conn net.Conn
 
-	mu sync.Mutex
-	r  *bufio.Reader
+	r *bufio.Reader
 }
 
 func NewRedisClientV2(address string) (*RedisClientV2, error) {
@@ -320,9 +330,6 @@ func NewRedisClientV2(address string) (*RedisClientV2, error) {
 }
 
 func (c *RedisClientV2) Ping() error {
-	//c.mu.Lock()
-	//defer c.mu.Unlock()
-
 	_, err := c.conn.Write([]byte("PING\r\n"))
 	if err != nil {
 		return err
@@ -338,9 +345,6 @@ func (c *RedisClientV2) Ping() error {
 }
 
 func (c *RedisClientV2) Set(key string, value string) error {
-	//c.mu.Lock()
-	//defer c.mu.Unlock()
-
 	cmd := []byte(fmt.Sprintf("SET %s %s\r\n", key, value))
 	n := 0
 	for n < len(cmd) {
@@ -362,9 +366,6 @@ func (c *RedisClientV2) Set(key string, value string) error {
 }
 
 func (c *RedisClientV2) Get(key string) (string, error) {
-	//c.mu.Lock()
-	//defer c.mu.Unlock()
-
 	cmd := fmt.Sprintf("GET %s\r\n", key)
 	_, err := c.conn.Write([]byte(cmd))
 	if err != nil {
@@ -374,9 +375,6 @@ func (c *RedisClientV2) Get(key string) (string, error) {
 }
 
 func (c *RedisClientV2) Quit() error {
-	//c.mu.Lock()
-	//defer c.mu.Unlock()
-
 	_, err := c.conn.Write([]byte("QUIT\r\n"))
 	if err != nil {
 		return err

@@ -165,6 +165,7 @@ func TestHttp(t *testing.T) {
 				if err != nil {
 					return nil, err
 				}
+				//conn.SetDeadline(time.Now().Add(time.Second * 5))
 				log.Printf("new client conn from %s to %s", conn.LocalAddr().String(), conn.RemoteAddr().String())
 				conn, err = WrapClientConn(conn, mws...)
 				if err != nil {

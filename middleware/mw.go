@@ -93,6 +93,21 @@ func (l *lazyConn) Write(p []byte) (int, error) {
 	return l.Conn.Write(p)
 }
 
+func (l *lazyConn) SetDeadline(t time.Time) error {
+	log.Println("r skip dead line")
+	return nil
+}
+
+func (l *lazyConn) SetReadDeadline(t time.Time) error {
+	log.Println("r skip dead line")
+	return nil
+}
+
+func (l *lazyConn) SetWriteDeadline(t time.Time) error {
+	log.Println("r skip dead line")
+	return nil
+}
+
 func (wl *wrappedListener) Accept() (net.Conn, error) {
 	conn, err := wl.Listener.Accept()
 	if err != nil {
