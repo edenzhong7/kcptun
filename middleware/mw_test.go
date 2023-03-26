@@ -27,33 +27,24 @@ func init() {
 var mws []ConnMiddleware
 
 func init() {
-	svrConfig, err := LoadSvrCert("certs/ca.crt", "certs/server.crt", "certs/server.key")
-	if err != nil {
-		panic(err)
-	}
-	cliConfig, err := LoadCliCert("certs/ca.crt", "certs/client.crt", "certs/client.key")
-	if err != nil {
-		panic(err)
-	}
+	// svrConfig, err := LoadSvrCert("certs/ca.crt", "certs/server.crt", "certs/server.key")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// cliConfig, err := LoadCliCert("certs/ca.crt", "certs/client.crt", "certs/client.key")
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 	mws = append(mws,
-		randMW{},
+		redisMW{},
+		//randMW{},
 		//compMW{},
-		tlsWrapper{
-			cliConfig: cliConfig,
-			svrConfig: svrConfig,
-		},
+		// tlsWrapper{
+		// 	cliConfig: cliConfig,
+		// 	svrConfig: svrConfig,
+		// },
 	)
-}
-
-var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-func RandString(n int) string {
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letterRunes[rand.Intn(len(letterRunes))]
-	}
-	return string(b)
 }
 
 // TCP Server端测试
@@ -226,7 +217,8 @@ func TestHttp(t *testing.T) {
 				log.Printf("new client conn from %s to %s", conn.LocalAddr().String(), conn.RemoteAddr().String())
 				conn, err = WrapClientConn(conn, mws...)
 				if err != nil {
-					log.Printf("wrap client conn failed, from %s to %s, err: %v", conn.LocalAddr().String(), conn.RemoteAddr().String(), err)
+					log.Printf("wrap client conn failed, err: %v", err)
+					return nil, err
 				}
 				log.Printf("wrapped client conn  from %s to %s", conn.LocalAddr().String(), conn.RemoteAddr().String())
 				return conn, err

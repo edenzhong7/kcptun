@@ -30,6 +30,7 @@ func init() {
 	}
 
 	mws = append(mws,
+		middleware.NewRedisMW(),
 		middleware.NewRandMW(),
 		middleware.NewTlsMW(
 			cliConfig,

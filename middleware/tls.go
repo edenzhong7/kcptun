@@ -9,8 +9,6 @@ import (
 	"net"
 )
 
-var _ ConnMiddleware = tlsWrapper{}
-
 func NewTlsMW(cliCfg, svrCfg *tls.Config) ConnMiddleware {
 	return &tlsWrapper{
 		cliConfig: cliCfg,

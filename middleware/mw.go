@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"errors"
+	"io"
 	"log"
 	"net"
 	"time"
@@ -122,6 +123,9 @@ func WrapClientConn(conn net.Conn, mws ...ConnMiddleware) (net.Conn, error) {
 		log.Printf("apply mw %s", mw.Name())
 		conn, err = mw.WrapClient(conn)
 		if err != nil {
+			if err == io.EOF {
+				println("gg" + mw.Name())
+			}
 			log.Printf("[%s] wrap client conn failed, err: %v", mw.Name(), err)
 			return nil, err
 		}

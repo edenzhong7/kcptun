@@ -3,11 +3,22 @@ package middleware
 import (
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"sync"
 
 	"github.com/cybozu-go/netutil"
 )
+
+var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func RandString(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+	}
+	return string(b)
+}
 
 func blockRead(c net.Conn, p []byte) (n int, err error) {
 	offset := 0
