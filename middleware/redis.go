@@ -386,7 +386,7 @@ func (c *RedisClientV2) Ping() error {
 		return err
 	}
 	resp, err := c.readResponse()
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return err
 	}
 	if resp != "PONG" {
@@ -425,6 +425,8 @@ func (c *RedisClientV2) Quit() error {
 	if err != nil {
 		return err
 	}
+	return nil
+
 	return c.conn.Close()
 }
 
@@ -460,5 +462,6 @@ func (c *RedisClientV2) readResponse() (string, error) {
 		return strData, nil
 	}
 	response = strings.TrimSpace(response)
+	log.Printf("got resp: %s", response)
 	return response, nil
 }

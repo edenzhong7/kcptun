@@ -3,7 +3,6 @@ package middleware
 import (
 	"bufio"
 	"context"
-	"crypto/sha1"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -16,8 +15,6 @@ import (
 	"time"
 
 	"github.com/elazarl/goproxy"
-	"github.com/xtaci/kcp-go/v5"
-	"golang.org/x/crypto/pbkdf2"
 )
 
 func init() {
@@ -90,6 +87,15 @@ func startTcpServer() {
 	}
 }
 
+func helloServer(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Hello, %s!", r.URL.Path[1:])
+}
+
+func startHttp() {
+	http.HandleFunc("/hello", helloServer)
+	http.ListenAndServe(":8000", nil)
+}
+
 func startHttpProxy() {
 	listen, err := net.Listen("tcp", "127.0.0.1:9999")
 	if err != nil {
@@ -106,62 +112,6 @@ func startHttpProxy() {
 
 	if err = http.Serve(listen, proxy); err != nil {
 		log.Fatalf("start proxy failed, err: %v", err)
-	}
-}
-
-func startHttpProxyOverKCP() {
-	key := pbkdf2.Key([]byte("demo pass"), []byte("demo salt"), 1024, 32, sha1.New)
-	block, _ := kcp.NewAESBlockCrypt(key)
-	listener, err := kcp.ListenWithOptions("127.0.0.1:9999", block, 10, 3)
-	if err != nil {
-		panic(err)
-	}
-
-	listen := WrapServerListener(listener, mws...)
-	proxy := goproxy.NewProxyHttpServer()
-	proxy.Verbose = true
-	proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		fmt.Printf("proxy recv conn from %s to %s, path: %s\n", req.RemoteAddr, req.Host, req.RequestURI)
-		return req, nil
-	})
-
-	if err = http.Serve(listen, proxy); err != nil {
-		log.Fatalf("start proxy failed, err: %v", err)
-	}
-}
-
-// handleEcho send back everything it received
-func handleEcho(conn net.Conn) {
-	buf := make([]byte, 4096)
-	for {
-		n, err := conn.Read(buf)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		n, err = conn.Write(buf[:n])
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	}
-}
-
-func startKCPServer() {
-	key := pbkdf2.Key([]byte("demo pass"), []byte("demo salt"), 1024, 32, sha1.New)
-	block, _ := kcp.NewAESBlockCrypt(key)
-	if listener, err := kcp.ListenWithOptions("127.0.0.1:9999", block, 10, 3); err == nil {
-		lis := WrapServerListener(listener, mws...)
-		for {
-			s, err := lis.Accept()
-			if err != nil {
-				log.Fatal(err)
-			}
-			go handleEcho(s)
-		}
-	} else {
-		log.Fatal(err)
 	}
 }
 
@@ -200,6 +150,7 @@ func TestTcp(t *testing.T) {
 
 func TestHttp(t *testing.T) {
 	go startHttpProxy()
+	go startHttp()
 	time.Sleep(time.Second)
 
 	proxyUrl, err := url.Parse("http://127.0.0.1:9999")
@@ -225,91 +176,8 @@ func TestHttp(t *testing.T) {
 			},
 		},
 	}
-	//resp, err := cli.Get("http://127.0.0.1:8000/hello")
-	resp, err := cli.Get("https://www.baidu.com")
-	if err != nil {
-		panic(err)
-	}
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		panic(err)
-	}
-	if resp.Body != nil {
-		defer resp.Body.Close()
-	}
-	t.Log(string(body))
-}
-
-func TestKCP(t *testing.T) {
-	go startKCPServer()
-	time.Sleep(time.Second)
-
-	key := pbkdf2.Key([]byte("demo pass"), []byte("demo salt"), 1024, 32, sha1.New)
-	block, _ := kcp.NewAESBlockCrypt(key)
-
-	// dial to the echo server
-	sess, err := kcp.DialWithOptions("127.0.0.1:9999", block, 10, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	conn, err := WrapClientConn(sess, mws...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close() // 关闭TCP连接
-	for i := 0; i < 10; i++ {
-		inputInfo := fmt.Sprintf("%d: %s", i, RandString(10))
-		n, err := conn.Write([]byte(inputInfo)) // 发送数据
-		if err != nil {
-			return
-		}
-		fmt.Println("cli send: ", string(inputInfo[:n]))
-		buf := [512]byte{}
-		n, err = conn.Read(buf[:])
-		if err != nil {
-			if err != io.EOF {
-				fmt.Println("recv failed, err:", err)
-			}
-			return
-		}
-		fmt.Println("cli recv: ", string(buf[:n]))
-	}
-}
-
-func TestHttpOverKCP(t *testing.T) {
-	go startHttpProxyOverKCP()
-	time.Sleep(time.Second)
-
-	key := pbkdf2.Key([]byte("demo pass"), []byte("demo salt"), 1024, 32, sha1.New)
-	block, _ := kcp.NewAESBlockCrypt(key)
-
-	proxyUrl, err := url.Parse("http://127.0.0.1:9999")
-	if err != nil {
-		panic(err)
-	}
-	cli := &http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyURL(proxyUrl),
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				// dial to the echo server
-				sess, err := kcp.DialWithOptions("127.0.0.1:9999", block, 10, 3)
-				if err != nil {
-					t.Fatal(err)
-				}
-				conn, err := WrapClientConn(sess, mws...)
-				log.Printf("new client conn from %s to %s", conn.LocalAddr().String(), conn.RemoteAddr().String())
-
-				if err != nil {
-					log.Printf("wrap client conn failed, from %s to %s, err: %v", conn.LocalAddr().String(), conn.RemoteAddr().String(), err)
-				}
-				log.Printf("wrapped client conn  from %s to %s", conn.LocalAddr().String(), conn.RemoteAddr().String())
-				return conn, err
-			},
-		},
-	}
-	//resp, err := cli.Get("http://127.0.0.1:8000/hello")
-	resp, err := cli.Get("https://www.baidu.com")
+	resp, err := cli.Get("http://127.0.0.1:8000/hello")
+	//resp, err := cli.Get("https://www.baidu.com")
 	if err != nil {
 		panic(err)
 	}
