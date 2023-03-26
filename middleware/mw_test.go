@@ -34,8 +34,8 @@ func init() {
 	// }
 
 	mws = append(mws,
-		redisMW{},
-		//randMW{},
+		//redisMW{},
+		randMW{},
 		//compMW{},
 		// tlsWrapper{
 		// 	cliConfig: cliConfig,
@@ -135,7 +135,7 @@ func TestTcp(t *testing.T) {
 		if err != nil {
 			return
 		}
-		fmt.Println("cli send: ", string(inputInfo[:n]))
+		fmt.Println("cli send: ", inputInfo[:n])
 		buf := [512]byte{}
 		n, err = conn.Read(buf[:])
 		if err != nil {
