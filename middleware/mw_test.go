@@ -24,23 +24,23 @@ func init() {
 var mws []ConnMiddleware
 
 func init() {
-	// svrConfig, err := LoadSvrCert("certs/ca.crt", "certs/server.crt", "certs/server.key")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// cliConfig, err := LoadCliCert("certs/ca.crt", "certs/client.crt", "certs/client.key")
-	// if err != nil {
-	// 	panic(err)
-	// }
+	//svrConfig, err := LoadSvrCert("certs/ca.crt", "certs/server.crt", "certs/server.key")
+	//if err != nil {
+	//	panic(err)
+	//}
+	//cliConfig, err := LoadCliCert("certs/ca.crt", "certs/client.crt", "certs/client.key")
+	//if err != nil {
+	//	panic(err)
+	//}
 
 	mws = append(mws,
-		//redisMW{},
-		randMW{},
+		redisMW{},
+		//randMW{},
 		//compMW{},
-		// tlsWrapper{
-		// 	cliConfig: cliConfig,
-		// 	svrConfig: svrConfig,
-		// },
+		//tlsWrapper{
+		//	cliConfig: cliConfig,
+		//	svrConfig: svrConfig,
+		//},
 	)
 }
 

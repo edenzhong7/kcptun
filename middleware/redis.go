@@ -25,9 +25,6 @@ func (rmw redisMW) Name() string {
 }
 
 func (rmw redisMW) WrapClient(conn net.Conn) (net.Conn, error) {
-	// rc := &RedisClient{
-	// 	conn: conn,
-	// }
 	rc := &RedisClientV2{
 		conn: conn,
 		r:    bufio.NewReader(conn),
@@ -132,19 +129,11 @@ func (rc *redisSvrConn) loop() {
 				log.Printf("invalid get command")
 				continue
 			}
-			retry := 5
-			for retry > 0 {
-				if len(rc.writeBuf) == 0 {
-					time.Sleep(time.Millisecond * 10)
-					retry--
-					log.Printf("write buf is empty, try later")
-					continue
-				}
-				break
-			}
 
 			if len(rc.writeBuf) == 0 {
-				writer.WriteString("-ERR many read with no data")
+				log.Printf("write is empty, send empty resp")
+				writer.WriteString("$0\r\n\r\n")
+				writer.Flush()
 				continue
 			}
 
@@ -203,6 +192,7 @@ type redisCliConn struct {
 	net.Conn
 	rConn *RedisClientV2
 
+	mu      sync.Mutex
 	readBuf []byte
 }
 
@@ -214,9 +204,15 @@ func (rc *redisCliConn) Read(p []byte) (n int, err error) {
 	}
 
 	key := RandString(5)
+	rc.mu.Lock()
 	block, err := rc.rConn.Get(key)
+	rc.mu.Unlock()
 	if err != nil {
 		return n, err
+	}
+	if len(block) == 0 {
+		time.Sleep(time.Millisecond * 5)
+		return 0, nil
 	}
 	sDec, _ := base64.StdEncoding.DecodeString(block)
 	rc.readBuf = append(rc.readBuf, sDec...)
@@ -228,6 +224,9 @@ func (rc *redisCliConn) Read(p []byte) (n int, err error) {
 }
 
 func (rc *redisCliConn) Write(p []byte) (n int, err error) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
 	key := RandString(5)
 	sEnc := base64.StdEncoding.EncodeToString(p)
 	err = rc.rConn.Set(key, sEnc)
