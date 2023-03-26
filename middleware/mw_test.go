@@ -87,7 +87,9 @@ func startTcpServer() {
 }
 
 func helloServer(w http.ResponseWriter, r *http.Request) {
+	log.Printf("recv http req")
 	fmt.Fprintf(w, "Hello, %s!", r.URL.Path[1:])
+	log.Printf("send http resp")
 }
 
 func startHttp() {
@@ -174,20 +176,17 @@ func TestHttp(t *testing.T) {
 			},
 		},
 	}
-	resp, err := cli.Get("http://127.0.0.1:8000/hello")
-	//resp, err := cli.Get("https://www.baidu.com")
+	//resp, err := cli.Get("http://127.0.0.1:8000/hello")
+	resp, err := cli.Get("https://www.baidu.com")
 	if err != nil {
 		panic(err)
 	}
-	// body := make([]byte, 10240)
-	// n, err := resp.Body.Read(body)
-	// body = body[:n]
+	body := make([]byte, 10240)
+	n, err := resp.Body.Read(body)
+	body = body[:n]
 	resp.Body.Close()
-	if err != nil {
+	if err != nil && err != io.EOF {
 		panic(err)
 	}
-	if resp.Body != nil {
-		defer resp.Body.Close()
-	}
-	//t.Log(string(body))
+	t.Log(string(body))
 }

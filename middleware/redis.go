@@ -51,11 +51,11 @@ func (rmw redisMW) WrapServer(conn net.Conn) (net.Conn, error) {
 		r:    redcon.NewReader(conn),
 		w:    redcon.NewWriter(conn),
 
-		rmu:      sync.Mutex{},
-		readBuf:  make([]byte, 0, 10240),
-		wmu:      sync.Mutex{},
-		writeBuf: nil,
-		closed:   false,
+		rmu:     sync.Mutex{},
+		readBuf: make([]byte, 0, 10240),
+		wmu:     sync.Mutex{},
+		dw:      make(chan []byte, 1),
+		closed:  false,
 	}
 	go c.loop()
 	return c, nil
@@ -69,8 +69,8 @@ type redisSvrConn struct {
 	rmu     sync.Mutex
 	readBuf []byte
 
-	wmu      sync.Mutex
-	writeBuf [][]byte
+	wmu sync.Mutex
+	dw  chan []byte
 
 	closed bool
 }
@@ -79,17 +79,89 @@ func (rc *redisSvrConn) loop() {
 	var (
 		cmd redcon.Command
 		err error
+
+		done = make(chan struct{})
 	)
 
 	defer func() {
 		log.Printf("svc conn loop canceled, err: %v", err)
+		close(done)
 	}()
 	writer := rc.w
 
+	getEv := make(chan struct{}, 10)
+	setEv := make(chan string, 10)
+
+	go func() {
+		// get loop
+		for {
+			select {
+			case <-getEv:
+				select {
+				case <-done:
+					log.Printf("exit get loop")
+					return
+				case block, ok := <-rc.dw:
+					if !ok {
+						writer.WriteError("dw chan closed")
+						writer.Flush()
+						return
+					}
+					bufLen := len(block)
+					sEnc := base64.StdEncoding.EncodeToString(block)
+					writer.WriteBulkString(sEnc)
+					err = writer.Flush()
+					if err != nil {
+						log.Printf("write get resp failed, err: %v", err)
+						continue
+					}
+					log.Printf("ack GET %d", bufLen)
+				}
+			case <-done:
+				log.Printf("exit get loop")
+				return
+			}
+		}
+	}()
+	go func() {
+		// set loop
+		for {
+			select {
+			case block, ok := <-setEv:
+				if !ok {
+					writer.WriteError("set ev chan closed")
+					writer.Flush()
+					return
+				}
+				rc.rmu.Lock()
+				sDec, err := base64.StdEncoding.DecodeString(block)
+				if err != nil {
+					rc.rmu.Unlock()
+					writer.WriteError(fmt.Sprintf("decode set arg failed, err: %v", err))
+					writer.Flush()
+					continue
+				}
+				rc.readBuf = append(rc.readBuf, sDec...)
+				rc.rmu.Unlock()
+
+				//writer.WriteString("OK")
+				//err = writer.Flush()
+				//if err != nil {
+				//	log.Printf("write quit resp failed, err: %v", err)
+				//	continue
+				//}
+				log.Printf("ack SET %d", len(sDec))
+			case <-done:
+				log.Printf("exit set loop")
+				return
+			}
+		}
+	}()
 	for !rc.closed {
+		start := time.Now().UnixNano()
 		cmd, err = rc.r.ReadCommand()
 		if err != nil {
-			log.Printf("read cmd failed, err: %v", err)
+			log.Printf("read cmd failed, cost: %dms,  err: %v", (time.Now().UnixNano()-start)/int64(time.Millisecond), err)
 			return
 		}
 		var args []string
@@ -118,52 +190,35 @@ func (rc *redisSvrConn) loop() {
 				writer.Flush()
 				continue
 			}
-			rc.rmu.Lock()
-			sDec, err := base64.StdEncoding.DecodeString(args[2])
-			if err != nil {
-				rc.rmu.Unlock()
-				writer.WriteError(fmt.Sprintf("decode set arg failed, err: %v", err))
-				writer.Flush()
-				continue
-			}
+			setEv <- args[2]
 
-			rc.readBuf = append(rc.readBuf, sDec...)
-			rc.rmu.Unlock()
-
-			writer.WriteString("OK")
-			err = writer.Flush()
-			if err != nil {
-				log.Printf("write quit resp failed, err: %v", err)
-				continue
-			}
-			log.Printf("ack SET %d", len(sDec))
 		case "get":
 			if len(args) != 2 {
 				writer.WriteError("get args error")
 				writer.Flush()
 				continue
 			}
-
-			if len(rc.writeBuf) == 0 {
-				log.Printf("write is empty, send empty resp")
-				writer.WriteBulkString("")
-				writer.Flush()
-				continue
-			}
-
-			rc.wmu.Lock()
-			bufLen := len(rc.writeBuf[0])
-			sEnc := base64.StdEncoding.EncodeToString(rc.writeBuf[0])
-			rc.writeBuf = rc.writeBuf[1:]
-			rc.wmu.Unlock()
-
-			writer.WriteBulkString(sEnc)
-			err = writer.Flush()
-			if err != nil {
-				log.Printf("write get resp failed, err: %v", err)
-				continue
-			}
-			log.Printf("ack GET %d", bufLen)
+			getEv <- struct{}{}
+			//if len(rc.writeBuf) == 0 {
+			//	log.Printf("write is empty, send empty resp")
+			//	writer.WriteBulkString("")
+			//	writer.Flush()
+			//	continue
+			//}
+			//
+			//rc.wmu.Lock()
+			//bufLen := len(rc.writeBuf[0])
+			//sEnc := base64.StdEncoding.EncodeToString(rc.writeBuf[0])
+			//rc.writeBuf = rc.writeBuf[1:]
+			//rc.wmu.Unlock()
+			//
+			//writer.WriteBulkString(sEnc)
+			//err = writer.Flush()
+			//if err != nil {
+			//	log.Printf("write get resp failed, err: %v", err)
+			//	continue
+			//}
+			//log.Printf("ack GET %d", bufLen)
 		}
 	}
 }
@@ -191,9 +246,10 @@ func (rc *redisSvrConn) Read(p []byte) (n int, err error) {
 }
 
 func (rc *redisSvrConn) Write(p []byte) (n int, err error) {
-	rc.wmu.Lock()
-	defer rc.wmu.Unlock()
-	rc.writeBuf = append(rc.writeBuf, append(p[:0:0], p...))
+	rc.dw <- p
+	//rc.wmu.Lock()
+	//defer rc.wmu.Unlock()
+	//rc.writeBuf = append(rc.writeBuf, append(p[:0:0], p...))
 	return len(p), nil
 }
 
@@ -217,14 +273,12 @@ func (rc *redisCliConn) Read(p []byte) (n int, err error) {
 	}
 
 	key := RandString(5)
-tryRead:
 	block, err := rc.rConn.Get(key)
 	if err != nil {
 		return n, err
 	}
 	if len(block) == 0 {
-		time.Sleep(time.Millisecond * 5)
-		goto tryRead
+		return n, nil
 	}
 	sDec, _ := base64.StdEncoding.DecodeString(block)
 	rc.readBuf = append(rc.readBuf, sDec...)
@@ -266,8 +320,8 @@ func NewRedisClientV2(address string) (*RedisClientV2, error) {
 }
 
 func (c *RedisClientV2) Ping() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	//c.mu.Lock()
+	//defer c.mu.Unlock()
 
 	_, err := c.conn.Write([]byte("PING\r\n"))
 	if err != nil {
@@ -284,8 +338,8 @@ func (c *RedisClientV2) Ping() error {
 }
 
 func (c *RedisClientV2) Set(key string, value string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	//c.mu.Lock()
+	//defer c.mu.Unlock()
 
 	cmd := []byte(fmt.Sprintf("SET %s %s\r\n", key, value))
 	n := 0
@@ -297,19 +351,19 @@ func (c *RedisClientV2) Set(key string, value string) error {
 		n += wrote
 	}
 
-	resp, err := c.readResponse()
-	if err != nil {
-		return err
-	}
-	if resp != "OK" {
-		return fmt.Errorf("SET resp is %s, not `OK`", resp)
-	}
+	//resp, err := c.readResponse()
+	//if err != nil {
+	//	return err
+	//}
+	//if resp != "OK" {
+	//	return fmt.Errorf("SET resp is %s, not `OK`", resp)
+	//}
 	return nil
 }
 
 func (c *RedisClientV2) Get(key string) (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	//c.mu.Lock()
+	//defer c.mu.Unlock()
 
 	cmd := fmt.Sprintf("GET %s\r\n", key)
 	_, err := c.conn.Write([]byte(cmd))
@@ -320,8 +374,8 @@ func (c *RedisClientV2) Get(key string) (string, error) {
 }
 
 func (c *RedisClientV2) Quit() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	//c.mu.Lock()
+	//defer c.mu.Unlock()
 
 	_, err := c.conn.Write([]byte("QUIT\r\n"))
 	if err != nil {
