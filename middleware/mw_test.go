@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
@@ -152,7 +151,6 @@ func TestHttp(t *testing.T) {
 	go startHttpProxy()
 	go startHttp()
 	time.Sleep(time.Second)
-	//(&net.TCPConn{}).Close()
 	proxyUrl, err := url.Parse("http://127.0.0.1:9999")
 	if err != nil {
 		panic(err)
@@ -181,12 +179,15 @@ func TestHttp(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	// body := make([]byte, 10240)
+	// n, err := resp.Body.Read(body)
+	// body = body[:n]
+	resp.Body.Close()
 	if err != nil {
 		panic(err)
 	}
 	if resp.Body != nil {
 		defer resp.Body.Close()
 	}
-	t.Log(string(body))
+	//t.Log(string(body))
 }
