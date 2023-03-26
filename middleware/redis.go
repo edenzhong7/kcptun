@@ -136,6 +136,21 @@ func (rc *redisSvrConn) loop() {
 				log.Printf("invalid get command")
 				return
 			}
+			retry := 5
+			for retry > 0 {
+				if len(rc.writeBuf) == 0 {
+					time.Sleep(time.Millisecond * 2)
+					retry--
+					continue
+				}
+				break
+			}
+
+			if len(rc.writeBuf) == 0 {
+				rc.w.WriteError("many read with no data")
+				return
+			}
+
 			rc.wmu.Lock()
 			bufLen := len(rc.writeBuf)
 			sEnc := base64.StdEncoding.EncodeToString(rc.writeBuf)
