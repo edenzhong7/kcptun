@@ -34,7 +34,7 @@ func init() {
 
 	mws = append(mws,
 		redisMW{},
-		//randMW{},
+		randMW{},
 		//compMW{},
 		//tlsWrapper{
 		//	cliConfig: cliConfig,
@@ -97,6 +97,12 @@ func startHttp() {
 	http.ListenAndServe(":8000", nil)
 }
 
+func startHTTPS() {
+	err := http.ListenAndServeTLS(":8001", "testcerts/server.crt", "testcerts/server.key", nil)
+	if err != nil {
+		log.Fatal("ListenAndServe: ", err)
+	}
+}
 func startHttpProxy() {
 	listen, err := net.Listen("tcp", "127.0.0.1:9999")
 	if err != nil {
@@ -152,6 +158,7 @@ func TestTcp(t *testing.T) {
 func TestHttp(t *testing.T) {
 	go startHttpProxy()
 	go startHttp()
+	go startHTTPS()
 	time.Sleep(time.Second)
 	proxyUrl, err := url.Parse("http://127.0.0.1:9999")
 	if err != nil {
@@ -178,7 +185,8 @@ func TestHttp(t *testing.T) {
 		},
 	}
 	//resp, err := cli.Get("http://127.0.0.1:8000/hello")
-	resp, err := cli.Get("https://www.baidu.com")
+	resp, err := cli.Get("https://127.0.0.1:8001/hello")
+	//resp, err := cli.Get("https://www.baidu.com")
 	if err != nil {
 		panic(err)
 	}
